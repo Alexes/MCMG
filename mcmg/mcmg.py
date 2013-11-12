@@ -3,6 +3,54 @@
 	
 '''
 
+import random
+
+class MarkovChain:
+	def __init__(self):
+		self.transition_matrix = {}
+		self.training_current_state = None
+		self.creation_current_state = None
+
+	def consume(self, state):
+		prev_state = self.training_current_state
+		if (prev_state == None): prev_state = '_None'
+
+		self.training_current_state = state
+
+		if (prev_state not in self.transition_matrix.keys()):
+			self.transition_matrix[prev_state] = {'_rowsum' : 0}
+
+		if (state not in self.transition_matrix[prev_state].keys()):
+			self.transition_matrix[prev_state][state] = 0
+		
+		self.transition_matrix[prev_state][state] += 1
+		self.transition_matrix[prev_state]['_rowsum'] += 1
+
+
+	def produce(self):
+		prev_state = self.creation_current_state
+		if (prev_state == None): prev_state = '_None'
+
+		roulette = random.randint(1, self.transition_matrix[prev_state]['_rowsum'])
+		running_sum = 0
+		produced_state = None
+		for key in self.transition_matrix[prev_state]:
+			if (key == '_rowsum'): 
+				continue
+			running_sum += self.transition_matrix[prev_state][key]
+			if (running_sum >= roulette):
+				produced_state = key
+				break
+	
+		self.creation_current_state = produced_state
+		return produced_state
+
+	def reset_produce(self):
+		self.creation_current_state = None
+
+	def reset_consume(self):
+		self.training_current_state = None
+
 import sys
 music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
 
@@ -39,3 +87,10 @@ for note in part.iter('note'):
 	PRINT_NOTES -= 1
 	if (PRINT_NOTES == 0): 
 		break
+
+
+c = MarkovChain()
+words = ['hello', 'world', 'printer', 'mate', 'tame']
+for word in words:
+	map(c.consume, word+'0')
+	c.reset_consume()
