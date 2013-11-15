@@ -8,21 +8,29 @@ import random
 class MarkovChain:
 	def __init__(self):
 		self.transmat = {}
+		self.rowsums = {}
+		self.start_vector = {}
+		self.start_vector_rowsum = 0
 		self.training_state = None
 		self.production_state = None
 
 	def _consume(self, state):
 		prev_state = self.training_state
-		if (prev_state == None): prev_state = '_None'
+		if (prev_state == None): 
+			if (state not in self.start_vector.keys()):
+				self.start_vector[state] = 0
+			self.start_vector[state] += 1
+			self.start_vector_rowsum += 1
+		else:
+			if (prev_state not in self.transmat.keys()):
+				self.transmat[prev_state] = {}
+				self.rowsums[prev_state] = 0
 
-		if (prev_state not in self.transmat.keys()):
-			self.transmat[prev_state] = {'_rowsum' : 0}
-
-		if (state not in self.transmat[prev_state].keys()):
-			self.transmat[prev_state][state] = 0
+			if (state not in self.transmat[prev_state].keys()):
+				self.transmat[prev_state][state] = 0
 		
-		self.transmat[prev_state][state] += 1
-		self.transmat[prev_state]['_rowsum'] += 1
+			self.transmat[prev_state][state] += 1
+			self.rowsums[prev_state] += 1
 
 		if (state == '\0'):
 			self._reset_training()
@@ -32,18 +40,25 @@ class MarkovChain:
 
 	def _produce(self):
 		prev_state = self.production_state
-		if (prev_state == None): prev_state = '_None'
-
-		roulette = random.randint(1, self.transmat[prev_state]['_rowsum'])
-		running_sum = 0
 		generated_state = None
-		for next_state in self.transmat[prev_state]:
-			if (next_state == '_rowsum'): 
-				continue
-			running_sum += self.transmat[prev_state][next_state]
-			if (running_sum >= roulette):
-				generated_state = next_state
-				break
+		if (prev_state == None): 
+			roulette = random.randint(1, self.start_vector_rowsum)
+			running_sum = 0
+
+			for next_state in self.start_vector:
+				running_sum += self.start_vector[next_state]
+				if (running_sum >= roulette):
+					generated_state = next_state
+					break
+		else:
+			roulette = random.randint(1, self.rowsums[prev_state])
+			running_sum = 0
+		
+			for next_state in self.transmat[prev_state]:
+				running_sum += self.transmat[prev_state][next_state]
+				if (running_sum >= roulette):
+					generated_state = next_state
+					break
 	
 		if (generated_state == '\0'):
 			self._reset_production()
@@ -51,6 +66,7 @@ class MarkovChain:
 			self.production_state = generated_state
 
 		return generated_state
+
 
 	def _reset_training(self):
 		self.training_state = None
@@ -80,68 +96,101 @@ class MarkovChain:
 
 		return sequence
 	
-	def print_transmat(self):
+	def __str__(self):
+		s = ''
 		def _escape_zero(v): 
 			if (v == '\0'): return '\\0' 
 			else: return v
 
 		for prev_state in self.transmat.keys():
-			str = prev_state + ': ['
+			tm = str(prev_state) + ': ['
 			for next_state in self.transmat[prev_state].keys():
-				str += '%s:%d, ' % (_escape_zero(next_state), self.transmat[prev_state][next_state])
-			str += ']'
-			print str
+				tm += '%s:%d, ' % (_escape_zero(str(next_state)), self.transmat[prev_state][next_state])
+			tm += '] rowsum: %d' % (self.rowsums[prev_state])
+			s += tm + '\n'
 
-import sys
-music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
+		tm = 'First: ['
+		for next_state in self.start_vector.keys():
+			tm += '%s:%d, ' % (_escape_zero(str(next_state)), self.start_vector[next_state]) 
+		tm += '] rowsum: %d' % (self.start_vector_rowsum)
+		s += tm
 
-import xml.etree.ElementTree as ET
-tree = ET.parse(music_xml_filename)
-root = tree.getroot()
+		return s
 
+class Note:
+	def __init__(self, step, octave, alter = 0):
+		self.step = step
+		self.octave = int(octave)
+		self.alter = int(alter) # but could be decimal
 
-part = root.find('part')
-part_id = part.get('id')
-part_name = root.find("./part-list/score-part[@id='%s']" % part_id).find('part-name').text
+	def __str__(self):
+		accidental = None
+		if (self.alter >= 0):
+			accidental = '#' * self.alter
+		else:
+			accidental = 'b' * (-1 * self.alter)
 
+		return self.step + accidental + str(self.octave)
 
-PRINT_NOTES = 35
-print 'First %d notes of part "%s":' % (PRINT_NOTES, part_name)
-for note in part.iter('note'):
-	step = note.find('pitch').find('step').text
-	octave = note.find('pitch').find('octave').text
-	type = note.find('type').text
-	alter = note.find('pitch').find('alter')
+	def midi(self): # ...note number
+		offsets = {'C':0, 'D':2, 'E':4, 'F':5, 'G':7, 'A':9, 'B':11}
+		num = (self.octave + 1) * 12 
+		num += offsets[self.step] 
+		num += self.alter
+		return num
 
-	halfsteps = 0
-	if (alter != None): halfsteps = int(alter.text)
-
-	accidental = None
-	if (halfsteps >= 0):
-		accidental = '#' * halfsteps
-	else:
-		accidental = 'b' * halfsteps
-		
-
-	print step + accidental + octave + ' ' + type
+	def __hash__(self):
+		return self.midi() # hash(int) returns just integer itself
 	
-	PRINT_NOTES -= 1
-	if (PRINT_NOTES == 0): 
-		break
+	def __cmp__(self, other): 
+		'''self > other if 'self' note is of higher frequency than 'other' note'''
+		if (not isinstance(other, Note)):
+			return 1 # TODO wtf?
+		return self.midi() - other.midi()
 
 
-c = MarkovChain()
-words = '''
-mast tame same teams
-team meat steam stem
-'''.replace('\n', ' ').split(' ')
-for word in words:
-	c.train(word)
-c.print_transmat()
+if (__name__ == '__main__'):
+	import sys
+	music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
+
+	import xml.etree.ElementTree as ET
+	tree = ET.parse(music_xml_filename)
+	root = tree.getroot()
 
 
-print ''.join(c.generate())
-print ''.join(c.generate())
-print ''.join(c.generate())
-print ''.join(c.generate())
-print ''.join(c.generate())
+	part = root.find('part')
+	part_id = part.get('id')
+	part_name = root.find("./part-list/score-part[@id='%s']" % part_id).find('part-name').text
+
+
+	PRINT_NOTES = 35
+	note_sequence = []
+	print 'First %d notes of part "%s":' % (PRINT_NOTES, part_name)
+	for note in part.iter('note'):
+		step = note.find('pitch').find('step').text
+		octave = note.find('pitch').find('octave').text
+		
+		alter = note.find('pitch').find('alter')
+		if (alter == None): alter = 0
+		else: alter = int(alter.text)
+		
+		n = Note(step, octave, alter)
+		note_sequence.append(n)
+
+		type = note.find('type').text
+
+		print n
+	
+		PRINT_NOTES -= 1
+		if (PRINT_NOTES == 0): 
+			break
+
+
+	c = MarkovChain()
+	c.train(note_sequence)
+	print c
+
+	generated = [str(x) for x in c.generate()]
+	print generated
+
+
