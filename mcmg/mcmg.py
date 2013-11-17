@@ -20,6 +20,7 @@ class MarkovChain:
 			if (state not in self.start_vector.keys()):
 				self.start_vector[state] = 0
 			self.start_vector[state] += 1
+			#self.start_vector[state] = self.start_vector.get(state, 0) + 1
 			self.start_vector_rowsum += 1
 		else:
 			if (prev_state not in self.transmat.keys()):
@@ -165,6 +166,7 @@ if (__name__ == '__main__'):
 
 	PRINT_NOTES = 35
 	note_sequence = []
+	durations_sequence = []
 	print 'First %d notes of part "%s":' % (PRINT_NOTES, part_name)
 	for note in part.iter('note'):
 		step = note.find('pitch').find('step').text
@@ -178,19 +180,26 @@ if (__name__ == '__main__'):
 		note_sequence.append(n)
 
 		type = note.find('type').text
+		durations_sequence.append(type)
 
-		print n
+		print n, '\t', type
 	
 		PRINT_NOTES -= 1
 		if (PRINT_NOTES == 0): 
 			break
 
 
-	c = MarkovChain()
-	c.train(note_sequence)
-	print c
+	noteChain = MarkovChain()
+	noteChain.train(note_sequence)
+	print noteChain
 
-	generated = [str(x) for x in c.generate()]
-	print generated
+	durChain = MarkovChain()
+	durChain.train(durations_sequence)
+	print durChain
+
+	for note in noteChain.generate():
+		duration = durChain._produce()
+		print note, '\t', duration if duration != '\0' else durChain._produce()
 
 
+# TODO improve MarkovChain: get rid of 'something in dict.keys()'. Change for self.start_vector[state] = self.start_vector.get(state, 0) + 1
