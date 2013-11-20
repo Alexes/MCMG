@@ -96,6 +96,13 @@ class MarkovChain:
 
 		return sequence
 	
+	def generate_length(self, length):
+		''' Generate a sequence of particular length '''
+		sequence = []
+		while (len(sequence) < length):
+			sequence += self.generate()
+		return sequence[0:length]
+
 	def __str__(self):
 		s = ''
 		def _escape_zero(v): 
@@ -152,6 +159,7 @@ class Note:
 import xml.etree.ElementTree as ET
 class MusicXml:
 	def _type_to_div(self, type, dotted, divisions_per_quarter):
+		''' Maps from note duration names (quarter, whole, etc.) to MusicXML divisions '''
 		mapping = {
 			'whole':	('multiply', 4),
 			'half':		('multiply', 2),
@@ -178,6 +186,7 @@ class MusicXml:
 		return div
 
 	def _div_to_types(self, div, divisions_per_quarter):
+		''' Maps MusicXML divisions to note duration names (quarter, whole, etc.) '''
 		if (div > 4 * divisions_per_quarter or div < 1):
 			raise RuntimeError('Divisions argument out of range [4*divisions_per_quarter, 1]')
 		
@@ -192,10 +201,10 @@ class MusicXml:
 			}
 
 		if (div in mapping):
-			return {'type':mapping[div], 'dotted':False}
+			return [{'type':mapping[div], 'dotted':False}]
 
 		if (div % 3 == 0 and div*2/3 in mapping):
-			return {'type':mapping[div*2/3], 'dotted':True}
+			return [{'type':mapping[div*2/3], 'dotted':True}]
 
 		# "Greedy Tie" - note needs to be broken down into several tied notes
 		div_i = div
@@ -213,12 +222,31 @@ class MusicXml:
 
 		return tie
 
+	
+	def _determine_divisions(self, dur_seq):
+		''' Calculates optimum value for <divisions></divisions> MusicXML tag '''
+		mapping = {
+			'whole':	1,
+			'half':		2,
+			'quarter':	4,
+			'eighth':	8,
+			'16th':		16,
+			'32nd':		32
+			}
 
-	def _add_attributes(measure, mxl_divisions, beats, beat_type):
+		shortest_duration_denominator = 0
+		for dur in dur_seq:
+			if (mapping[dur['type']] > shortest_duration_denominator):
+				shortest_duration_denominator = mapping[dur['type']]
+
+		return max(shortest_duration_denominator/4, 1)
+	
+	def _add_attributes(self, measure, divisions_per_quarter, beats, beat_type):
+		''' Adds <attributes> tag to specified <measure> MusicXML tag '''
 		addchild = ET.SubElement
 		attributes = addchild(measure, 'attributes')
 
-		addchild(attributes, 'divisions').text = str(mxl_divisions)
+		addchild(attributes, 'divisions').text = str(divisions_per_quarter)
 		addchild(addchild(attributes, 'key'), 'fifth').text = '0'
 		time = addchild(attributes, 'time')
 		addchild(time, 'beats').text = str(beats)
@@ -227,11 +255,45 @@ class MusicXml:
 		clef = addchild(attributes, 'clef')
 		addchild(clef, 'sign').text = 'G'
 		addchild(clef, 'line').text = '2'
+	
 
-	def write_mxl(note_seq, dur_seq):
+	def _add_note_xml(self, measure, pitch, div, type, dotted, tie_start, tie_end):
+		''' Adds MusicXML code for one note '''
+		#print 'Add note: %s div=%d type=%s dotted=%s tie_start=%s tie_end=%s' % (str(pitch), div, type, dotted, tie_start, tie_end)
+		addchild = ET.SubElement
 
+		note_tag = addchild(measure, 'note')
+		pitch_tag = addchild(note_tag, 'pitch')
+		addchild(pitch_tag, 'step').text = pitch.step
+		addchild(pitch_tag, 'octave').text = str(pitch.octave)
+		if (pitch.alter != 0): 
+			addchild(pitch_tag, 'alter').text = str(pitch.alter)
+
+		addchild(note_tag, 'duration').text = str(div)
+		if (tie_end == True):
+			tie = addchild(note_tag, 'tie')
+			tie.set('type', 'stop')
+		if (tie_start == True):
+			tie = addchild(note_tag, 'tie')
+			tie.set('type', 'start')
+		addchild(note_tag, 'type').text = type
+		if (dotted == True):
+			addchild(note_tag, 'dot')
+
+		notations_tag = None
+		if (tie_start == True or tie_end == True):
+			notations_tag = addchild(note_tag, 'notations')
+		if (tie_end == True):
+			tied = addchild(notations_tag, 'tied')
+			tied.set('type', 'stop')
+		if (tie_start == True):
+			tied = addchild(notations_tag, 'tied')
+			tied.set('type', 'start')
+
+	def write_mxl(self, note_seq, dur_seq):
+		''' Writes given note and durations sequence (in "quarter, whole, etc." form) into MusicXML file '''
 		if (len(note_seq) != len(dur_seq)):
-			raise RuntimeError('Note sequence and Durations sequence must be of the same length!')
+			raise RuntimeError('Notes sequence and Durations sequence must be of the same length!')
 
 		root = ET.Element('score-partwise')
 		root.set('version', '3.0')
@@ -243,17 +305,73 @@ class MusicXml:
 		score_part = addchild(part_list, 'score-part')
 		score_part.set('id', 'P1')
 
-		addchild(score_part, 'part-name').text = 'Generated'
+		addchild(score_part, 'part-name').text = 'Artificial'
 
 		part = addchild(root, 'part')
 		part.set('id', 'P1')
 
-		# do notes
+		note_seq = list(reversed(note_seq))
+		dur_seq = [{'type':T, 'dotted':False} for T in list(reversed(dur_seq))] # convert to type paired with dottedness
+		BEATS = 4 # hardcoded for now
+		BEAT_TYPE = 4
+		DIVISIONS_PER_QUARTER = self._determine_divisions(dur_seq)
+		DIVISIONS_PER_MEASURE = 4 * DIVISIONS_PER_QUARTER * BEATS / BEAT_TYPE
+		running_sum = DIVISIONS_PER_MEASURE
+		#print '<divisions>%d</divisions> per_measure=%d' % (DIVISIONS_PER_QUARTER, DIVISIONS_PER_MEASURE)
+		tie_start_monitor = 0 # is this called a 'monitor' really?
+		tie_end_monitor = 0
+		measure = None
+		measure_num = 1
+		while(len(note_seq) > 0):
+			if (running_sum == DIVISIONS_PER_MEASURE):
+				# create new measure
+				#print 'MEASURE'
+				measure = addchild(part, 'measure')
+				measure.set('number', str(measure_num))
+				if (measure_num == 1):
+					self._add_attributes(measure, DIVISIONS_PER_QUARTER, BEATS, BEAT_TYPE)
+				measure_num += 1
+				running_sum = 0
 
+			N = note_seq.pop()
+			T = dur_seq.pop()
+			D = self._type_to_div(T['type'], T['dotted'], DIVISIONS_PER_QUARTER)
 
-		print ET.tostring(root)
-		ET.ElementTree(root).write('generated.xml')
+			if (DIVISIONS_PER_MEASURE - running_sum < D):
+				D_orig = D
+				D = DIVISIONS_PER_MEASURE - running_sum
+				D_remainder = D_orig - D
+				T_remainder = self._div_to_types(D_remainder, DIVISIONS_PER_QUARTER)
+				for T_rem in reversed(T_remainder):
+					note_seq.append(N)
+					dur_seq.append(T_rem)
+					tie_start_monitor += 1
 
+			Ts = self._div_to_types(D, DIVISIONS_PER_QUARTER)
+			T = Ts[0]
+			del Ts[0]
+			D = self._type_to_div(T['type'], T['dotted'], DIVISIONS_PER_QUARTER)
+			for T_tied in reversed(Ts):
+				note_seq.append(N)
+				dur_seq.append(T_tied)
+				tie_start_monitor += 1
+
+			tie_end = False
+			tie_start = False
+			if (tie_end_monitor > 0):
+				tie_end = True
+				tie_end_monitor -= 1
+			if (tie_start_monitor > 0):
+				tie_start = True
+				tie_start_monitor -= 1
+				tie_end_monitor += 1
+
+			self._add_note_xml(measure, N, D, T['type'], T['dotted'], tie_start, tie_end)
+			running_sum += D
+
+		filename = 'generated.xml'
+		ET.ElementTree(root).write(filename)
+		print 'Music written to ' + filename
 
 if (__name__ == '__main__'):
 	import sys
@@ -263,7 +381,10 @@ if (__name__ == '__main__'):
 	tree = ET.parse(music_xml_filename)
 	root = tree.getroot()
 
-
+	# TODO a "choose part" dialog
+	# Choose a part to train on:
+	# [1] (P1) Piano
+	# [2] (P2) Violin
 	part = root.find('part')
 	part_id = part.get('id')
 	part_name = root.find("./part-list/score-part[@id='%s']" % part_id).find('part-name').text
@@ -272,7 +393,7 @@ if (__name__ == '__main__'):
 	PRINT_NOTES = 35
 	note_sequence = []
 	durations_sequence = []
-	print 'First %d notes of part "%s":' % (PRINT_NOTES, part_name)
+	print 'Training on first %d notes of part "%s":' % (PRINT_NOTES, part_name)
 	for note in part.iter('note'):
 		step = note.find('pitch').find('step').text
 		octave = note.find('pitch').find('octave').text
@@ -302,15 +423,39 @@ if (__name__ == '__main__'):
 	durChain.train(durations_sequence)
 	print durChain
 
-	note_seq = noteChain.generate()
-	dur_seq = []
-	for note in note_seq:
-		duration = durChain._produce()
-		if (duration == '\0'): duration = durChain._produce()
-		dur_seq.append(duration)
-		print note, '\t', duration
+	#note_seq = noteChain.generate()
+	note_seq = noteChain.generate_length(200)
+	dur_seq = durChain.generate_length(len(note_seq))
+	#dur_seq = []
+	#for note in note_seq:
+	#	duration = durChain._produce()
+	#	if (duration == '\0'): duration = durChain._produce()
+	#	dur_seq.append(duration)
+	#	print note, '\t', duration
+	
 
-	#write_mxl(note_seq, dur_seq)
+	mx = MusicXml()		
+
+	#note_seq = [Note('C', 4)] * 5
+	#dur_seq = ['quarter']*3 + ['eighth'] + ['quarter']
+	
+	#note_seq = [Note('C', 4)] * 4
+	#dur_seq = ['quarter']*4
+
+	#note_seq = [Note('C', 4)] * 1
+	#dur_seq = ['whole']*1
+
+
+	#note_seq = [Note('C', 4)] * 5
+	#dur_seq = ['quarter']*3 + ['16th'] + ['quarter']
+
+	print '==========================='
+	mx.write_mxl(note_seq, dur_seq)
+
+
+
+
+
 
 # TODO improve MarkovChain: get rid of 'something in dict.keys()'. Change for self.start_vector[state] = self.start_vector.get(state, 0) + 1
 
