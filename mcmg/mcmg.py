@@ -96,12 +96,18 @@ class MarkovChain:
 
 		return sequence
 	
-	def generate_length(self, length):
-		''' Generate a sequence of particular length '''
+
+	def generate_at_least(self, length):
+		''' Generate a sequence of length greater than or equal to some particular value '''
 		sequence = []
 		while (len(sequence) < length):
 			sequence += self.generate()
-		return sequence[0:length]
+		return sequence
+
+	def generate_length(self, length):
+		''' Generate a sequence of particular length '''
+		return self.generate_at_least(length)[0:length]
+
 
 	def __str__(self):
 		s = ''
@@ -375,8 +381,32 @@ class MusicXml:
 
 if (__name__ == '__main__'):
 	import sys
-	music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
+	
+	pid = None
+	training_notes_limit = None
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Metallica_The_Unforgiven_solo_only\lg-893624106868431893.xml'
 
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Yesterday_-_The_Beatles\lg-554418414057536766.xml'
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\An_cluinn_thu_mi_mo_nighean_donn\lg-337877602013703783.xml'
+	
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Galway_Celtic_tunes\lg-584039090251899670.xml'
+
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Carol_of_the_Bells_Ukrainian_Bell_Carol\lg-263263748897903147.xml'
+	#pid = 'P1'
+
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Sweet_Child_of_mine\lg-515878348846837448.xml'
+	#pid = 'P2'
+
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Nemo_-_Nightwish_String_Quartet\lg-745000545513312548.xml'
+	#pid = 'P2'
+	#training_notes_limit = 45
+
+	music_xml_filename = 'D:\Projects\MCMG\MusicXML\Garry_Porch_of_Avernish_Scottish\lg-696634382210268678.xml'
+	pid = 'P1'
+
+
+	#######################
 	import xml.etree.ElementTree as ET
 	tree = ET.parse(music_xml_filename)
 	root = tree.getroot()
@@ -385,17 +415,32 @@ if (__name__ == '__main__'):
 	# Choose a part to train on:
 	# [1] (P1) Piano
 	# [2] (P2) Violin
-	part = root.find('part')
+	
+	part = None
+	if (pid == None):
+		part = root.find('part')
+	else:
+		part = root.find("./part[@id='%s']" % pid)
+
 	part_id = part.get('id')
 	part_name = root.find("./part-list/score-part[@id='%s']" % part_id).find('part-name').text
+	part_name = '' if part_name == None else part_name
+
+	print 'Reading from file "%s"' % music_xml_filename
+	print 'Training on part "%s" (%s)' % (part_name.encode('UTF-8'), part_id)
 
 
-	PRINT_NOTES = 35
 	note_sequence = []
 	durations_sequence = []
-	print 'Training on first %d notes of part "%s":' % (PRINT_NOTES, part_name)
+	#print 'Training on first %d notes of part "%s":' % (PRINT_NOTES, part_name)
 	for note in part.iter('note'):
-		step = note.find('pitch').find('step').text
+		pitch_element = note.find('pitch')
+		if (pitch_element == None):
+			# a rest
+			print 'Skipping a rest'
+			continue
+
+		step = pitch_element.find('step').text
 		octave = note.find('pitch').find('octave').text
 		
 		alter = note.find('pitch').find('alter')
@@ -408,54 +453,34 @@ if (__name__ == '__main__'):
 		type = note.find('type').text
 		durations_sequence.append(type)
 
-		print n, '\t', type
-	
-		PRINT_NOTES -= 1
-		if (PRINT_NOTES == 0): 
-			break
+		#print n, '\t', type
 
+	
+	if (training_notes_limit is not None):
+		note_sequence = note_sequence[0:training_notes_limit]
+		print 'Applying limit on training notes count: %d' % (training_notes_limit)
 
 	noteChain = MarkovChain()
 	noteChain.train(note_sequence)
+	print '======= Notes Markov Chain ======='
 	print noteChain
 
 	durChain = MarkovChain()
 	durChain.train(durations_sequence)
+	print '======= Durations Markov Chain ======='
 	print durChain
 
-	#note_seq = noteChain.generate()
-	note_seq = noteChain.generate_length(200)
+	note_seq = noteChain.generate_at_least(40)
 	dur_seq = durChain.generate_length(len(note_seq))
-	#dur_seq = []
-	#for note in note_seq:
-	#	duration = durChain._produce()
-	#	if (duration == '\0'): duration = durChain._produce()
-	#	dur_seq.append(duration)
-	#	print note, '\t', duration
-	
 
 	mx = MusicXml()		
-
-	#note_seq = [Note('C', 4)] * 5
-	#dur_seq = ['quarter']*3 + ['eighth'] + ['quarter']
-	
-	#note_seq = [Note('C', 4)] * 4
-	#dur_seq = ['quarter']*4
-
-	#note_seq = [Note('C', 4)] * 1
-	#dur_seq = ['whole']*1
-
-
-	#note_seq = [Note('C', 4)] * 5
-	#dur_seq = ['quarter']*3 + ['16th'] + ['quarter']
-
 	print '==========================='
 	mx.write_mxl(note_seq, dur_seq)
 
 
 
 
-
-
 # TODO improve MarkovChain: get rid of 'something in dict.keys()'. Change for self.start_vector[state] = self.start_vector.get(state, 0) + 1
-
+# rests are not supported
+# dotted notes in training scores are read as non-dotted (but dotted notes can be generated)
+# tied notes in training scores are read as separate (but tied notes can be generated)
