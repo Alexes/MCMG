@@ -4,7 +4,6 @@
 '''
 
 import random
-
 class MarkovChain:
 	def __init__(self):
 		self.transmat = {}
@@ -150,6 +149,112 @@ class Note:
 		return self.midi() - other.midi()
 
 
+import xml.etree.ElementTree as ET
+class MusicXml:
+	def _type_to_div(self, type, dotted, divisions_per_quarter):
+		mapping = {
+			'whole':	('multiply', 4),
+			'half':		('multiply', 2),
+			'quarter':	('multiply', 1),
+			'eighth':	('divide', 2),
+			'16th':		('divide', 4),
+			'32nd':		('divide', 8)
+			}
+		
+		if (type not in mapping):
+			raise RuntimeError('Unsupported note duration type "%s"' % (type))
+
+		if (mapping[type][0] == 'divide' and divisions_per_quarter % mapping[type][1] != 0):
+			raise RuntimeError('%s notes are not representable if there are %d divisions per quarter note' % (type, divisions_per_quarter))
+
+		div = divisions_per_quarter * mapping[type][1] if mapping[type][0] == 'multiply' else divisions_per_quarter / mapping[type][1]
+
+		if (dotted == True and div % 2 != 0):
+			raise RuntimeError('Dotted %s is not representable if there are %d divisions per quarter note' % (type, divisions_per_quarter))
+		
+		if (dotted == True):
+			div = div * 3 / 2
+
+		return div
+
+	def _div_to_types(self, div, divisions_per_quarter):
+		if (div > 4 * divisions_per_quarter or div < 1):
+			raise RuntimeError('Divisions argument out of range [4*divisions_per_quarter, 1]')
+		
+		d = divisions_per_quarter
+		mapping = {
+			d/8.0 :	'32nd',
+			d/4.0:	'16th',
+			d/2.0:	'eighth',
+			d:		'quarter',
+			2*d:	'half',
+			4*d:	'whole'
+			}
+
+		if (div in mapping):
+			return {'type':mapping[div], 'dotted':False}
+
+		if (div % 3 == 0 and div*2/3 in mapping):
+			return {'type':mapping[div*2/3], 'dotted':True}
+
+		# "Greedy Tie" - note needs to be broken down into several tied notes
+		div_i = div
+		tie = []
+		while(div_i > 0):
+			for i in reversed(range(1, div_i + 1)):
+				if (i in mapping):
+					tie.append({'type':mapping[i], 'dotted':False})
+					div_i -= i
+					break
+				if (i % 3 == 0 and i*2/3 in mapping):
+					tie.append({'type':mapping[i*2/3], 'dotted':True})
+					div_i -= i
+					break
+
+		return tie
+
+
+	def _add_attributes(measure, mxl_divisions, beats, beat_type):
+		addchild = ET.SubElement
+		attributes = addchild(measure, 'attributes')
+
+		addchild(attributes, 'divisions').text = str(mxl_divisions)
+		addchild(addchild(attributes, 'key'), 'fifth').text = '0'
+		time = addchild(attributes, 'time')
+		addchild(time, 'beats').text = str(beats)
+		addchild(time, 'beat-type').text = str(beat_type)
+
+		clef = addchild(attributes, 'clef')
+		addchild(clef, 'sign').text = 'G'
+		addchild(clef, 'line').text = '2'
+
+	def write_mxl(note_seq, dur_seq):
+
+		if (len(note_seq) != len(dur_seq)):
+			raise RuntimeError('Note sequence and Durations sequence must be of the same length!')
+
+		root = ET.Element('score-partwise')
+		root.set('version', '3.0')
+	
+		addchild = ET.SubElement
+
+		part_list = addchild(root, 'part-list')
+
+		score_part = addchild(part_list, 'score-part')
+		score_part.set('id', 'P1')
+
+		addchild(score_part, 'part-name').text = 'Generated'
+
+		part = addchild(root, 'part')
+		part.set('id', 'P1')
+
+		# do notes
+
+
+		print ET.tostring(root)
+		ET.ElementTree(root).write('generated.xml')
+
+
 if (__name__ == '__main__'):
 	import sys
 	music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
@@ -197,9 +302,15 @@ if (__name__ == '__main__'):
 	durChain.train(durations_sequence)
 	print durChain
 
-	for note in noteChain.generate():
+	note_seq = noteChain.generate()
+	dur_seq = []
+	for note in note_seq:
 		duration = durChain._produce()
-		print note, '\t', duration if duration != '\0' else durChain._produce()
+		if (duration == '\0'): duration = durChain._produce()
+		dur_seq.append(duration)
+		print note, '\t', duration
 
+	#write_mxl(note_seq, dur_seq)
 
 # TODO improve MarkovChain: get rid of 'something in dict.keys()'. Change for self.start_vector[state] = self.start_vector.get(state, 0) + 1
+
