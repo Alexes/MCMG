@@ -16,22 +16,18 @@ class MarkovChain:
 	def _consume(self, state):
 		prev_state = self.training_state
 		if (prev_state == None): 
-			if (state not in self.start_vector.keys()):
-				self.start_vector[state] = 0
-			self.start_vector[state] += 1
-			#self.start_vector[state] = self.start_vector.get(state, 0) + 1
+			self.start_vector[state] = self.start_vector.get(state, 0) + 1
 			self.start_vector_rowsum += 1
 		else:
-			if (prev_state not in self.transmat.keys()):
+			if (prev_state not in self.transmat):
 				self.transmat[prev_state] = {}
 				self.rowsums[prev_state] = 0
 
-			if (state not in self.transmat[prev_state].keys()):
+			if (state not in self.transmat[prev_state]):
 				self.transmat[prev_state][state] = 0
 		
 			self.transmat[prev_state][state] += 1
 			self.rowsums[prev_state] += 1
-
 		if (state == '\0'):
 			self._reset_training()
 		else:
@@ -385,7 +381,7 @@ if (__name__ == '__main__'):
 	pid = None
 	training_notes_limit = None
 	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
-	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Metallica_The_Unforgiven_solo_only\lg-893624106868431893.xml'
+	music_xml_filename = 'D:\Projects\MCMG\MusicXML\Metallica_The_Unforgiven_solo_only\lg-893624106868431893.xml'
 
 	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Yesterday_-_The_Beatles\lg-554418414057536766.xml'
 	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\An_cluinn_thu_mi_mo_nighean_donn\lg-337877602013703783.xml'
@@ -402,8 +398,8 @@ if (__name__ == '__main__'):
 	#pid = 'P2'
 	#training_notes_limit = 45
 
-	music_xml_filename = 'D:\Projects\MCMG\MusicXML\Garry_Porch_of_Avernish_Scottish\lg-696634382210268678.xml'
-	pid = 'P1'
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Garry_Porch_of_Avernish_Scottish\lg-696634382210268678.xml'
+	#pid = 'P1'
 
 
 	#######################
@@ -470,7 +466,7 @@ if (__name__ == '__main__'):
 	print '======= Durations Markov Chain ======='
 	print durChain
 
-	note_seq = noteChain.generate_at_least(40)
+	note_seq = noteChain.generate_at_least(20)
 	dur_seq = durChain.generate_length(len(note_seq))
 
 	mx = MusicXml()		
@@ -478,9 +474,12 @@ if (__name__ == '__main__'):
 	mx.write_mxl(note_seq, dur_seq)
 
 
+	#ch = MarkovChain()
+	#words = 'mast tame same teams team meat steam stem'.split(' ')
+	#[ch.train(x) for x in words]
+	#print ch
 
 
-# TODO improve MarkovChain: get rid of 'something in dict.keys()'. Change for self.start_vector[state] = self.start_vector.get(state, 0) + 1
 # rests are not supported
 # dotted notes in training scores are read as non-dotted (but dotted notes can be generated)
 # tied notes in training scores are read as separate (but tied notes can be generated)
