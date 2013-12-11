@@ -3,128 +3,6 @@
 	
 '''
 
-import random
-class MarkovChain:
-	def __init__(self):
-		self.transmat = {}
-		self.rowsums = {}
-		self.start_vector = {}
-		self.start_vector_rowsum = 0
-		self.training_state = None
-		self.production_state = None
-
-	def _consume(self, state):
-		prev_state = self.training_state
-		if (prev_state == None): 
-			self.start_vector[state] = self.start_vector.get(state, 0) + 1
-			self.start_vector_rowsum += 1
-		else:
-			if (prev_state not in self.transmat):
-				self.transmat[prev_state] = {}
-				self.rowsums[prev_state] = 0
-
-			if (state not in self.transmat[prev_state]):
-				self.transmat[prev_state][state] = 0
-		
-			self.transmat[prev_state][state] += 1
-			self.rowsums[prev_state] += 1
-		if (state == '\0'):
-			self._reset_training()
-		else:
-			self.training_state = state
-
-
-	def _produce(self):
-		prev_state = self.production_state
-		generated_state = None
-		if (prev_state == None): 
-			roulette = random.randint(1, self.start_vector_rowsum)
-			running_sum = 0
-
-			for next_state in self.start_vector:
-				running_sum += self.start_vector[next_state]
-				if (running_sum >= roulette):
-					generated_state = next_state
-					break
-		else:
-			roulette = random.randint(1, self.rowsums[prev_state])
-			running_sum = 0
-		
-			for next_state in self.transmat[prev_state]:
-				running_sum += self.transmat[prev_state][next_state]
-				if (running_sum >= roulette):
-					generated_state = next_state
-					break
-	
-		if (generated_state == '\0'):
-			self._reset_production()
-		else:
-			self.production_state = generated_state
-
-		return generated_state
-
-
-	def _reset_training(self):
-		self.training_state = None
-
-	def _reset_production(self):
-		self.production_state = None
-
-	def train(self, sequence):
-		if (len(sequence) == 0): return
-		if (self.training_state != None): raise RuntimeError('Markov chain is not in empty training state. Other training in progress or previous ended incorrectly')
-		for event in sequence:
-			self._consume(event)
-		self._consume('\0')
-
-	def generate(self, length_limit = 200):
-		sequence = []
-		counter = 0
-		while (counter < length_limit):
-			generated_state = self._produce()
-			if (generated_state == '\0'):
-				break
-			sequence.append(generated_state)
-			counter += 1
-
-		if (counter == length_limit):
-			self._reset_production()
-
-		return sequence
-	
-
-	def generate_at_least(self, length):
-		''' Generate a sequence of length greater than or equal to some particular value '''
-		sequence = []
-		while (len(sequence) < length):
-			sequence += self.generate()
-		return sequence
-
-	def generate_length(self, length):
-		''' Generate a sequence of particular length '''
-		return self.generate_at_least(length)[0:length]
-
-
-	def __str__(self):
-		s = ''
-		def _escape_zero(v): 
-			if (v == '\0'): return '\\0' 
-			else: return v
-
-		for prev_state in self.transmat.keys():
-			tm = str(prev_state) + ': ['
-			for next_state in self.transmat[prev_state].keys():
-				tm += '%s:%d, ' % (_escape_zero(str(next_state)), self.transmat[prev_state][next_state])
-			tm += '] rowsum: %d' % (self.rowsums[prev_state])
-			s += tm + '\n'
-
-		tm = 'First: ['
-		for next_state in self.start_vector.keys():
-			tm += '%s:%d, ' % (_escape_zero(str(next_state)), self.start_vector[next_state]) 
-		tm += '] rowsum: %d' % (self.start_vector_rowsum)
-		s += tm
-
-		return s
 
 class Note:
 	def __init__(self, step, octave, alter = 0):
@@ -132,7 +10,7 @@ class Note:
 		self.octave = int(octave)
 		self.alter = int(alter) # but could be decimal
 
-	def __str__(self):
+	def __repr__(self):
 		accidental = None
 		if (self.alter >= 0):
 			accidental = '#' * self.alter
@@ -292,7 +170,7 @@ class MusicXml:
 			tied = addchild(notations_tag, 'tied')
 			tied.set('type', 'start')
 
-	def write_mxl(self, note_seq, dur_seq):
+	def write_mxl(self, note_seq, dur_seq, part_name='Artificial'):
 		''' Writes given note and durations sequence (in "quarter, whole, etc." form) into MusicXML file '''
 		if (len(note_seq) != len(dur_seq)):
 			raise RuntimeError('Notes sequence and Durations sequence must be of the same length!')
@@ -307,7 +185,7 @@ class MusicXml:
 		score_part = addchild(part_list, 'score-part')
 		score_part.set('id', 'P1')
 
-		addchild(score_part, 'part-name').text = 'Artificial'
+		addchild(score_part, 'part-name').text = part_name
 
 		part = addchild(root, 'part')
 		part.set('id', 'P1')
@@ -456,22 +334,27 @@ if (__name__ == '__main__'):
 		note_sequence = note_sequence[0:training_notes_limit]
 		print 'Applying limit on training notes count: %d' % (training_notes_limit)
 
-	noteChain = MarkovChain()
+
+	# parameterized implementation of Markov chain
+	import Markov
+	MARKOV_DEGREE = 2
+	noteChain = Markov.MarkovChainN(MARKOV_DEGREE)
 	noteChain.train(note_sequence)
 	print '======= Notes Markov Chain ======='
 	print noteChain
 
-	durChain = MarkovChain()
+	durChain = Markov.MarkovChainN(MARKOV_DEGREE)
 	durChain.train(durations_sequence)
 	print '======= Durations Markov Chain ======='
 	print durChain
 
-	note_seq = noteChain.generate_at_least(20)
+	#note_seq = noteChain.generate_at_least(20)
+	note_seq = noteChain.generate()
 	dur_seq = durChain.generate_length(len(note_seq))
 
 	mx = MusicXml()		
 	print '==========================='
-	mx.write_mxl(note_seq, dur_seq)
+	mx.write_mxl(note_seq, dur_seq, 'Markov chain degree ' + str(MARKOV_DEGREE))
 
 
 	#ch = MarkovChain()
