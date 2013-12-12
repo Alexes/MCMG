@@ -58,17 +58,17 @@ class MarkovChainN:
 			self._consume(elem)
 		self._consume('\0')
 
-	def generate(self, length_limit = 200):
+	def generate(self, length_limit = None):
 		sequence = []
 		counter = 0
-		while (counter < length_limit):
+		while (length_limit == None or counter < length_limit):
 			generated_state = self._produce()
 			if (generated_state == '\0'):
 				break
 			sequence.append(generated_state)
 			counter += 1
 
-		if (counter == length_limit):
+		if (length_limit != None and counter == length_limit):
 			self._reset_state()
 
 		return sequence
