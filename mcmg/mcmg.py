@@ -32,7 +32,7 @@ class Note:
 	def __cmp__(self, other): 
 		'''self > other if 'self' note is of higher frequency than 'other' note'''
 		if (not isinstance(other, Note)):
-			return 1 # TODO wtf?
+			return NotImplemented # Correct return value for comparing objects of different types
 		return self.midi() - other.midi()
 
 
@@ -258,8 +258,8 @@ if (__name__ == '__main__'):
 	
 	pid = None
 	training_notes_limit = None
-	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
-	music_xml_filename = 'D:\Projects\MCMG\MusicXML\Metallica_The_Unforgiven_solo_only\lg-893624106868431893.xml'
+	music_xml_filename = 'D:\Projects\MCMG\MusicXML\The_dance_of_victory-Eluveitie\lg-155582393382959147.xml'
+	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Metallica_The_Unforgiven_solo_only\lg-893624106868431893.xml'
 
 	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\Yesterday_-_The_Beatles\lg-554418414057536766.xml'
 	#music_xml_filename = 'D:\Projects\MCMG\MusicXML\An_cluinn_thu_mi_mo_nighean_donn\lg-337877602013703783.xml'
@@ -337,7 +337,7 @@ if (__name__ == '__main__'):
 
 	# parameterized implementation of Markov chain
 	import Markov
-	MARKOV_DEGREE = 2
+	MARKOV_DEGREE = 4
 	noteChain = Markov.MarkovChainN(MARKOV_DEGREE)
 	noteChain.train(note_sequence)
 	print '======= Notes Markov Chain ======='
